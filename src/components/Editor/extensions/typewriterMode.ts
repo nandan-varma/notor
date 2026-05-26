@@ -1,4 +1,4 @@
-import { EditorView, ViewPlugin } from "@codemirror/view";
+import { ViewPlugin } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
 import type { ViewUpdate } from "@codemirror/view";
 

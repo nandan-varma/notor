@@ -13,6 +13,7 @@ pub enum NotorError {
     #[error("path escapes vault: {0}")]
     PathEscape(String),
     #[error("invalid front matter: {0}")]
+    #[allow(dead_code)] // reserved for richer front-matter validation
     FrontMatter(String),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
@@ -27,7 +28,7 @@ pub enum NotorError {
 }
 
 impl Serialize for NotorError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {

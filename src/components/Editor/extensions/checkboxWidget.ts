@@ -5,10 +5,10 @@ class CheckboxWidget extends WidgetType {
   constructor(public checked: boolean, public from: number, public to: number) {
     super();
   }
-  eq(other: CheckboxWidget) {
+  override eq(other: CheckboxWidget) {
     return other.checked === this.checked && other.from === this.from;
   }
-  toDOM(view: EditorView) {
+  override toDOM(view: EditorView) {
     const wrap = document.createElement("span");
     wrap.setAttribute("aria-hidden", "true");
     wrap.className = "cm-checkbox" + (this.checked ? " cm-checkbox--checked" : "");
@@ -30,7 +30,7 @@ class CheckboxWidget extends WidgetType {
     };
     return wrap;
   }
-  ignoreEvent() {
+  override ignoreEvent() {
     return false;
   }
 }

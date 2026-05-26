@@ -21,13 +21,6 @@ struct DeletedPayload {
     path: String,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct RenamedPayload {
-    old_path: String,
-    new_path: String,
-}
-
 static WATCHER_HANDLE: once_cell_lite::OnceCell<Arc<Mutex<Option<RecommendedWatcher>>>> =
     once_cell_lite::OnceCell::new();
 

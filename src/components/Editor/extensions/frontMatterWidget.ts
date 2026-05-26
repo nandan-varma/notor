@@ -5,10 +5,10 @@ class FrontMatterPill extends WidgetType {
   constructor(public summary: string) {
     super();
   }
-  eq(o: FrontMatterPill) {
+  override eq(o: FrontMatterPill) {
     return o.summary === this.summary;
   }
-  toDOM() {
+  override toDOM() {
     const el = document.createElement("div");
     el.className = "cm-front-matter-pill";
     el.style.cssText =
@@ -16,7 +16,7 @@ class FrontMatterPill extends WidgetType {
     el.textContent = this.summary;
     return el;
   }
-  ignoreEvent() {
+  override ignoreEvent() {
     return true;
   }
 }

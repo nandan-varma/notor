@@ -22,7 +22,6 @@ import { EmptyState } from "./EmptyState";
 import styles from "./Editor.module.css";
 
 export function Editor() {
-  const activeTabId = useEditorStore((s) => s.activeTabId);
   const activeTab: OpenTab | undefined = useEditorStore((s) =>
     s.tabs.find((t) => t.noteId === s.activeTabId)
   );

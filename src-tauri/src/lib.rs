@@ -25,6 +25,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             apply_macos_chrome(app)?;
+            #[cfg(not(target_os = "macos"))]
+            let _ = app;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -62,8 +64,7 @@ pub fn run() {
 }
 
 #[cfg(target_os = "macos")]
-fn apply_macos_chrome(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::WebviewWindow;
+fn apply_macos_chrome(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(window) = app.get_webview_window("main") {
         set_traffic_light_inset(&window);
     }
