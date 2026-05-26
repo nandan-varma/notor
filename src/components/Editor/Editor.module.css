@@ -1,0 +1,63 @@
+.surface {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  background-color: var(--bg-editor);
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.cm {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cm :global(.cm-editor) {
+  height: 100%;
+}
+
+.cm :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.cm :global(.cm-wikilink) {
+  color: var(--syntax-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.cm :global(.cm-wikilink:hover) {
+  text-decoration-color: var(--accent-primary);
+}
+
+.loading,
+.error {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-editor);
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+}
+
+.error {
+  color: var(--accent-danger);
+}
+
+.status {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  background-color: var(--bg-editor);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}

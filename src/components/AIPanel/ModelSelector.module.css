@@ -1,0 +1,45 @@
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  gap: var(--space-2);
+}
+
+.dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select {
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 2px 14px 2px 4px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: var(--font-ui);
+}
+
+.chevron {
+  position: absolute;
+  right: 0;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+.model {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}

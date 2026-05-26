@@ -1,0 +1,24 @@
+.handle {
+  position: relative;
+  flex-shrink: 0;
+  width: 1px;
+  background-color: var(--border-subtle);
+  cursor: ew-resize;
+  z-index: var(--z-resize);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+/* Wider invisible hit area for easier grabbing */
+.handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+
+.handle:hover,
+.handle:active {
+  background-color: var(--accent-primary);
+}
