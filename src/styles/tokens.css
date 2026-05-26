@@ -1,0 +1,167 @@
+/* Design tokens — single source of truth for color, type, spacing, motion.
+   Components reference these via var(--token-name) — never hard-code values. */
+
+:root[data-theme="dark"] {
+  /* Backgrounds — layered depth */
+  --bg-base: #0f0f10;
+  --bg-sidebar: #141415;
+  --bg-editor: #161618;
+  --bg-panel: #141415;
+  --bg-elevated: #1e1e21;
+  --bg-overlay: #252529;
+
+  /* Text */
+  --text-primary: #e8e8ea;
+  --text-secondary: #9898a0;
+  --text-muted: #5a5a63;
+  --text-accent: #ff8c42;
+
+  /* Borders */
+  --border-subtle: #1f1f23;
+  --border-strong: #2e2e34;
+
+  /* Accent */
+  --accent-primary: #ff8c42;
+  --accent-secondary: #5b8dee;
+  --accent-success: #4caf7d;
+  --accent-warning: #f0a843;
+  --accent-danger: #e76060;
+
+  /* Editor-specific */
+  --editor-bg: #161618;
+  --editor-selection: rgba(255, 140, 66, 0.15);
+  --editor-cursor: #ff8c42;
+  --editor-gutter: #1f1f23;
+
+  /* Syntax highlighting */
+  --syntax-heading: #e8e8ea;
+  --syntax-bold: #e8e8ea;
+  --syntax-italic: #c8c8d0;
+  --syntax-link: #5b8dee;
+  --syntax-code: #e4956b;
+  --syntax-code-bg: #1e1e21;
+  --syntax-blockquote: #5a5a63;
+  --syntax-tag: #7cb8ff;
+  --syntax-checked: #5a5a63;
+  --syntax-frontmatter: #5a5a63;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="light"] {
+  --bg-base: #f5f4f0;
+  --bg-sidebar: #eeede9;
+  --bg-editor: #faf9f6;
+  --bg-panel: #f0efe9;
+  --bg-elevated: #ffffff;
+  --bg-overlay: #e6e5e0;
+
+  --text-primary: #1a1a1c;
+  --text-secondary: #5c5c66;
+  --text-muted: #a0a0a8;
+  --text-accent: #d4631a;
+
+  --border-subtle: #e0dfd8;
+  --border-strong: #d0cfc8;
+
+  --accent-primary: #d4631a;
+  --accent-secondary: #4267c2;
+  --accent-success: #3a915d;
+  --accent-warning: #c98a2a;
+  --accent-danger: #c14545;
+
+  --editor-bg: #faf9f6;
+  --editor-selection: rgba(212, 99, 26, 0.12);
+  --editor-cursor: #d4631a;
+  --editor-gutter: #ebeae3;
+
+  --syntax-heading: #1a1a1c;
+  --syntax-bold: #1a1a1c;
+  --syntax-italic: #3a3a40;
+  --syntax-link: #4267c2;
+  --syntax-code: #b04e1a;
+  --syntax-code-bg: #efeee8;
+  --syntax-blockquote: #8a8a92;
+  --syntax-tag: #3868a8;
+  --syntax-checked: #a0a0a8;
+  --syntax-frontmatter: #a0a0a8;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+:root {
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Typography */
+  --font-ui: "DM Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-editor: "Lora", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Consolas, monospace;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 22px;
+
+  /* Editor sizing */
+  --editor-font-size: 16px;
+  --editor-line-height: 1.75;
+  --editor-max-width: 680px;
+  --editor-padding-y: 48px;
+  --editor-padding-x: 64px;
+
+  /* Motion */
+  --duration-fast: 80ms;
+  --duration-base: 150ms;
+  --duration-slow: 240ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Layout */
+  --titlebar-height: 28px;
+  --traffic-light-inset: 78px;
+
+  /* z-index scale */
+  --z-tabs: 10;
+  --z-resize: 20;
+  --z-tooltip: 50;
+  --z-overlay: 100;
+  --z-modal: 200;
+}
+
+/* Respect system color scheme if user hasn't picked one. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+  }
+}
