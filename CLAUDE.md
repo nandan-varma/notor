@@ -39,11 +39,12 @@ The split between frontend and backend is the most important thing to internaliz
 
 **Rust and TS models are mirrored.** `src-tauri/src/models.rs` uses `#[serde(rename_all = "camelCase")]`; `src/types/{note,vault,ai}.ts` declares the same shape. Changing one side without the other will silently break at runtime.
 
-**Frontend state is split into five Zustand stores** with intentionally narrow scopes:
+**Frontend state is split into six Zustand stores** with intentionally narrow scopes:
+- `appStore` — cross-vault state (recent vaults, last vault, last theme). Hydrated from the Rust-side `state.json` at launch.
 - `vaultStore` — open vault metadata, notes map, folder tree (canonical source for the sidebar)
-- `editorStore` — open tabs, active tab, in-memory dirty content per tab
+- `editorStore` — open tabs, active tab, in-memory dirty content per tab, external-conflict resolution
 - `searchStore` — query/filters/results for the full-text overlay
-- `aiStore` — conversation, provider, model, API keys, streaming flag
+- `aiStore` — conversation, provider, model, API keys (persisted via tauri-plugin-store), streaming flag
 - `uiStore` — panel widths/visibility, focus mode, overlay slot, toast, context menu
 
 The `overlay` field on `uiStore` is a **single-slot enum** (`"quickOpen" | "commandPalette" | "search" | "settings" | null`). Only ever one overlay visible. Don't add ad-hoc `visible` flags — extend this enum.
@@ -51,6 +52,12 @@ The `overlay` field on `uiStore` is a **single-slot enum** (`"quickOpen" | "comm
 **The file watcher is live.** `useVaultWatcher` listens for `note:created/modified/deleted` events from Rust and merges them into `vaultStore`. Do not poll, do not call `listNotes()` on a timer — backend pushes are the source of truth.
 
 **CodeMirror owns the editor DOM.** React only re-renders when tabs switch (the `EditorSurface` is keyed on `tab.noteId`). Keystrokes never trigger a React render — the `autoSave` plugin pushes content into `editorStore.updateContent` and debounces a `saveTab()` 800ms after the last edit. If you find yourself adding `useState` for editor content, you're going the wrong way.
+
+**Two writes never collide.** Every `atomic_write` calls `register_self_write(path)` *before* `persist()`. The file watcher consults that map and skips events on paths the app wrote within a 600ms window — otherwise our own saves would bounce back as "external changes" and trigger the conflict toast. If you add a new write path, make sure it goes through `atomic_write` (or registers self-writes manually).
+
+**The Rust body cache is the source of truth for search.** `AppState.bodies: HashMap<NoteId, String>` is primed during `open_vault` and updated by every fs command and the watcher. `full_text_search` reads from there, never from disk. Adding a new write path means: write to disk, then update `notes` + `by_path` + `bodies` together, or search results go stale.
+
+**Two layers of persisted state.** Per-vault config lives in `{vault}/.notor/config.json`. Cross-vault state (recent vaults, last opened vault, last theme, window size+position) lives in `{app_config_dir}/state.json` and is owned by the Rust `AppLevel` manager. `main.tsx` runs `applyCachedTheme()` synchronously from localStorage before React mounts so the first paint is never the wrong color.
 
 ## Design tokens (no hard-coded values)
 
@@ -64,7 +71,10 @@ The CodeMirror theme (`src/components/Editor/extensions/theme.ts`) also pulls fr
 - **New command palette entry** → add to `buildCommandRegistry()` in `src/lib/commands.ts`. Bindings in `useKeymap` can dispatch by command id.
 - **New AI slash command** → add to `SLASH_COMMANDS` in `src/components/AIPanel/AIInput.tsx`.
 - **New CodeMirror extension** → file under `src/components/Editor/extensions/`, then include in the `extensions` array in `Editor.tsx`. WidgetType subclasses must use `override` on `eq`, `toDOM`, `ignoreEvent` (TS strict).
-- **New AI provider** → add a streaming function in `src/hooks/useAI.ts` mirroring `anthropicStream` / `openaiStream`; wire it in `callProvider`; add the provider to `DEFAULT_MODELS` in `aiStore.ts` and to the dropdown in `Settings.tsx`.
+- **New markdown shortcut** → add a `KeyBinding` to `markdownKeymap.ts`. Build selections via `EditorSelection.create([EditorSelection.range(a, b)])`, not plain object literals.
+- **New AI provider** → add a streaming function in `src/hooks/useAI.ts` mirroring `anthropicStream` / `openaiStream`; wire it in `callProvider`; add the host to the `connect-src` of the CSP in `tauri.conf.json`; add to `DEFAULT_MODELS` in `aiStore.ts` and to the dropdown in `Settings.tsx`.
+- **New native shell action** → write the Rust command in `src-tauri/src/commands/shell.rs` (use `std::process::Command`, not yet-another-plugin), register in `lib.rs`, surface in `src/lib/tauri.ts`.
+- **New persisted cross-vault state** → add a field to `AppLevelState` in `src-tauri/src/state.rs`, expose via a command in `commands/app.rs`, mirror in `appStore.ts`. The Rust side handles atomic save on every mutation.
 
 ## Vault on-disk format
 
@@ -78,12 +88,16 @@ Every note has YAML front matter with a stable `id` (NTR-{nanoid}). The filename
 
 All writes go through `atomic_write` in `commands/fs.rs` (tempfile + `persist`), and `delete_note` moves to `.notor/trash/` rather than unlinking. Path resolution (`vault::resolve_in_vault`) defends against `..` traversal — always go through it when accepting a path from the frontend.
 
-## Gotchas hit during the initial build (worth knowing)
+## Gotchas hit during builds (worth knowing)
 
 - `pub type Result<T> = ...` in `src-tauri/src/error.rs` shadows `std::result::Result` inside the `Serialize for NotorError` impl. The Serialize signature must spell out `std::result::Result<S::Ok, S::Error>` or the `generate_handler!` proc macro panics with a misleading error.
+- `tauri::State<T>` has its own `.inner()` that returns `&T`, which shadows any `inner()` you define on `T`. The AppState exposes `.arc()` to clone its `Arc<RwLock<Inner>>` for the watcher thread — don't rename it back to `inner()`.
 - The Tauri v2 `setup` closure expects `Result<(), Box<dyn std::error::Error>>`, not `tauri::Result`.
 - Tauri's bundle config requires icon files to exist at build time even in `cargo check` — keep `src-tauri/icons/*.png` populated.
+- `Path::components()` does not resolve `..` segments; it yields `ParentDir` components for each one. `resolve_in_vault` rejects any `ParentDir` *before* joining — `starts_with` on the joined path alone is not sufficient defense.
+- CM6 dispatch's `selection` field expects an `EditorSelection`, not a plain object. Build it via `EditorSelection.create([EditorSelection.range(a, b)])`.
 - The front-matter pill widget disappears when the cursor is inside the YAML block (intentional — lets you edit it).
+- `localStorage` and `matchMedia` are polyfilled in `src/test/setup.ts` because jsdom 25 on newer Node releases doesn't always expose them. Tests that touch persistence rely on those polyfills.
 
 ## Project principles (from the spec)
 
