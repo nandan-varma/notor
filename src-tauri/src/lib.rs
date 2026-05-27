@@ -10,8 +10,8 @@ mod models;
 mod state;
 mod vault;
 
-use state::AppState;
-use tauri::Manager;
+use state::{AppLevel, AppState};
+use tauri::{LogicalPosition, LogicalSize, Manager};
 
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -23,6 +23,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .setup(|app| {
+            // Boot the cross-vault state from disk. The file lives next to
+            // the app's config directory, so it survives upgrades.
+            let state_path = app
+                .path()
+                .app_config_dir()
+                .map(|dir| dir.join("state.json"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("state.json"));
+            let app_level = AppLevel::new(state_path);
+            restore_window_state(app, &app_level);
+            app.manage(app_level);
+
             #[cfg(target_os = "macos")]
             apply_macos_chrome(app)?;
             #[cfg(not(target_os = "macos"))]
@@ -30,6 +41,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // App-level
+            commands::app::get_app_state,
+            commands::app::forget_recent_vault,
+            commands::app::set_last_theme,
+            commands::app::save_window_state,
             // Vault
             commands::vault::open_vault,
             commands::vault::close_vault,
@@ -58,9 +74,32 @@ pub fn run() {
             // Watcher
             commands::watcher::start_watching,
             commands::watcher::stop_watching,
+            // Shell
+            commands::shell::reveal_in_finder,
+            commands::shell::open_externally,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Apply persisted window size + position before the user sees the first
+/// paint. Invalid (off-screen) coordinates are silently ignored — Tauri's
+/// own defaults take over.
+fn restore_window_state(app: &tauri::App, app_level: &AppLevel) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let state = app_level.read();
+    let w = state.window.width.unwrap_or(0.0);
+    let h = state.window.height.unwrap_or(0.0);
+    if w >= 600.0 && h >= 400.0 {
+        let _ = window.set_size(LogicalSize::new(w, h));
+    }
+    if let (Some(x), Some(y)) = (state.window.x, state.window.y) {
+        // We can't easily query screen bounds here; trust the persisted value
+        // and rely on the OS to clamp to a visible area.
+        let _ = window.set_position(LogicalPosition::new(x, y));
+    }
 }
 
 #[cfg(target_os = "macos")]

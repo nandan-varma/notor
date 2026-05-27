@@ -1,6 +1,7 @@
 //! Note CRUD commands. Every disk write goes through `atomic_write` so we
 //! never leave a half-written file if the process dies mid-save.
 
+use crate::commands::watcher::register_self_write;
 use crate::error::{NotorError, Result};
 use crate::models::{NoteContent, NoteFrontMatter, NoteIndex, NoteStatus};
 use crate::state::AppState;
@@ -16,6 +17,8 @@ fn require_vault(state: &State<'_, AppState>) -> Result<PathBuf> {
 }
 
 /// tempfile-in-same-dir + rename = atomic write on all major filesystems.
+/// Also registers the path as a "self-write" so the watcher won't bounce
+/// our own modify event back as an external change.
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
     let parent = path
         .parent()
@@ -24,6 +27,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
     tmp.write_all(content.as_bytes())?;
     tmp.as_file_mut().sync_all()?;
+    register_self_write(path);
     tmp.persist(path)
         .map_err(|e| NotorError::Io(e.error))?;
     Ok(())
@@ -60,18 +64,20 @@ pub async fn read_note(path: String, state: State<'_, AppState>) -> Result<NoteC
     let (fm_str, body) = vault::split_front_matter(&raw);
     let front_matter = vault::parse_front_matter(fm_str);
     let index = vault::index_from_disk(&root, &resolved)?;
+    let body_owned = body.to_string();
 
-    // Keep the in-memory index hot.
+    // Keep the in-memory index + body cache hot.
     {
         let mut inner = state.write();
         inner.by_path.insert(resolved.clone(), index.id.clone());
         inner.notes.insert(index.id.clone(), index.clone());
+        inner.bodies.insert(index.id.clone(), body_owned.clone());
     }
 
     Ok(NoteContent {
         raw: raw.clone(),
         front_matter,
-        body: body.to_string(),
+        body: body_owned,
         index,
     })
 }
@@ -91,11 +97,12 @@ pub async fn write_note(
     let stamped = stamp_modified(&content)?;
     atomic_write(&resolved, &stamped)?;
 
-    let index = vault::index_from_disk(&root, &resolved)?;
+    let (index, body) = vault::read_and_index(&root, &resolved)?;
     {
         let mut inner = state.write();
         inner.by_path.insert(resolved.clone(), index.id.clone());
         inner.notes.insert(index.id.clone(), index.clone());
+        inner.bodies.insert(index.id.clone(), body);
     }
     Ok(index)
 }
@@ -143,11 +150,12 @@ pub async fn create_note(
     let file = vault::compose_file(&fm, &format!("# {}\n\n", title))?;
     atomic_write(&path, &file)?;
 
-    let index = vault::index_from_disk(&root, &path)?;
+    let (index, body) = vault::read_and_index(&root, &path)?;
     {
         let mut inner = state.write();
         inner.by_path.insert(path.clone(), index.id.clone());
         inner.notes.insert(index.id.clone(), index.clone());
+        inner.bodies.insert(index.id.clone(), body);
     }
     Ok(index)
 }
@@ -180,12 +188,13 @@ pub async fn rename_note(
         fs::remove_file(&old)?;
     }
 
-    let index = vault::index_from_disk(&root, &new_path)?;
+    let (index, body) = vault::read_and_index(&root, &new_path)?;
     {
         let mut inner = state.write();
         inner.by_path.remove(&old);
         inner.by_path.insert(new_path.clone(), index.id.clone());
         inner.notes.insert(index.id.clone(), index.clone());
+        inner.bodies.insert(index.id.clone(), body);
     }
     Ok(index)
 }
@@ -210,12 +219,13 @@ pub async fn move_note(
     let dest = dest_dir.join(filename);
     fs::rename(&src, &dest)?;
 
-    let index = vault::index_from_disk(&root, &dest)?;
+    let (index, body) = vault::read_and_index(&root, &dest)?;
     {
         let mut inner = state.write();
         inner.by_path.remove(&src);
         inner.by_path.insert(dest.clone(), index.id.clone());
         inner.notes.insert(index.id.clone(), index.clone());
+        inner.bodies.insert(index.id.clone(), body);
     }
     Ok(index)
 }
@@ -247,6 +257,7 @@ pub async fn delete_note(path: String, state: State<'_, AppState>) -> Result<()>
         let mut inner = state.write();
         if let Some(id) = inner.by_path.remove(&src) {
             inner.notes.remove(&id);
+            inner.bodies.remove(&id);
         }
     }
     Ok(())
@@ -277,11 +288,12 @@ pub async fn duplicate_note(
     let composed = vault::compose_file(&fm, body)?;
     atomic_write(&new_path, &composed)?;
 
-    let index = vault::index_from_disk(&root, &new_path)?;
+    let (index, dup_body) = vault::read_and_index(&root, &new_path)?;
     {
         let mut inner = state.write();
         inner.by_path.insert(new_path.clone(), index.id.clone());
         inner.notes.insert(index.id.clone(), index.clone());
+        inner.bodies.insert(index.id.clone(), dup_body);
     }
     Ok(index)
 }

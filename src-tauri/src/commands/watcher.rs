@@ -1,18 +1,27 @@
 //! File watcher — uses native FSEvents on macOS via the `notify` crate.
 //!
-//! Events are emitted as Tauri events:
-//!   `note:created`, `note:modified`, `note:deleted`, `note:renamed`
-//! Frontend listeners merge these into their stores so the UI stays live.
+//! The watcher does two things for every event:
+//!   1. Updates the in-memory body cache so search stays in sync.
+//!   2. Re-emits events to the frontend so stores update without polling.
+//!
+//! Suppression: when the app itself writes a note, the resulting FS event
+//! would create a useless round-trip. `register_self_write` lets the fs
+//! commands flag the path they just wrote so we ignore the next modify on
+//! it within a short window.
 
 use crate::error::{NotorError, Result};
 use crate::state::AppState;
 use crate::vault;
+use chrono::Utc;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use parking_lot::Mutex;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 
 #[derive(Serialize, Clone)]
@@ -21,20 +30,34 @@ struct DeletedPayload {
     path: String,
 }
 
-static WATCHER_HANDLE: once_cell_lite::OnceCell<Arc<Mutex<Option<RecommendedWatcher>>>> =
-    once_cell_lite::OnceCell::new();
+static WATCHER_HANDLE: OnceLock<Arc<Mutex<Option<RecommendedWatcher>>>> = OnceLock::new();
 
-mod once_cell_lite {
-    use std::sync::OnceLock;
-    pub struct OnceCell<T>(OnceLock<T>);
-    impl<T> OnceCell<T> {
-        pub const fn new() -> Self {
-            Self(OnceLock::new())
+/// Recently self-written paths — paths the app wrote via write_note within
+/// `SELF_WRITE_WINDOW` are skipped to avoid bouncing our own writes through
+/// the watcher.
+static SELF_WRITES: OnceLock<Arc<Mutex<HashMap<PathBuf, Instant>>>> = OnceLock::new();
+const SELF_WRITE_WINDOW: Duration = Duration::from_millis(600);
+
+pub fn register_self_write(path: &Path) {
+    let map = SELF_WRITES.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+    let mut guard = map.lock();
+    let now = Instant::now();
+    guard.insert(path.to_path_buf(), now);
+    // Opportunistic GC so the map doesn't grow unbounded.
+    guard.retain(|_, t| now.duration_since(*t) < SELF_WRITE_WINDOW * 4);
+}
+
+fn was_self_written(path: &Path) -> bool {
+    let map = SELF_WRITES.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+    let mut guard = map.lock();
+    let now = Instant::now();
+    if let Some(t) = guard.get(path).copied() {
+        if now.duration_since(t) < SELF_WRITE_WINDOW {
+            return true;
         }
-        pub fn get_or_init(&self, f: impl FnOnce() -> T) -> &T {
-            self.0.get_or_init(f)
-        }
+        guard.remove(path);
     }
+    false
 }
 
 #[tauri::command]
@@ -58,25 +81,26 @@ pub async fn start_watching(app: AppHandle, state: State<'_, AppState>) -> Resul
 
     let handle = WATCHER_HANDLE.get_or_init(|| Arc::new(Mutex::new(None)));
     {
-        let mut guard = handle.lock().unwrap();
+        let mut guard = handle.lock();
         *guard = Some(watcher);
     }
     state.write().watching = true;
 
     let app_handle = app.clone();
     let root_for_thread = root.clone();
+    let state_inner = state.arc();
     thread::spawn(move || {
-        // Debounce: collect events for 100ms windows before processing.
         loop {
             match rx.recv() {
                 Ok(Ok(event)) => {
                     let mut batch = vec![event];
+                    // Debounce: collect events for 100ms windows.
                     while let Ok(more) = rx.recv_timeout(Duration::from_millis(100)) {
                         if let Ok(ev) = more {
                             batch.push(ev);
                         }
                     }
-                    process_batch(&app_handle, &root_for_thread, batch);
+                    process_batch(&app_handle, &root_for_thread, &state_inner, batch);
                 }
                 Ok(Err(e)) => log::warn!("watch error: {:?}", e),
                 Err(_) => break,
@@ -87,41 +111,54 @@ pub async fn start_watching(app: AppHandle, state: State<'_, AppState>) -> Resul
     Ok(())
 }
 
-fn is_markdown(path: &std::path::Path, vault_root: &std::path::Path) -> bool {
+fn is_markdown(path: &Path, vault_root: &Path) -> bool {
     if path.starts_with(vault_root.join(".notor")) {
         return false;
     }
     path.extension().and_then(|s| s.to_str()) == Some("md")
 }
 
-fn process_batch(app: &AppHandle, root: &std::path::Path, events: Vec<Event>) {
+fn process_batch(
+    app: &AppHandle,
+    root: &Path,
+    state: &Arc<parking_lot::RwLock<crate::state::Inner>>,
+    events: Vec<Event>,
+) {
     for ev in events {
         match ev.kind {
             EventKind::Create(_) => {
                 for p in &ev.paths {
-                    if !is_markdown(p, root) {
+                    if !is_markdown(p, root) || was_self_written(p) {
                         continue;
                     }
-                    if let Ok(idx) = vault::index_from_disk(root, p) {
+                    if let Ok((idx, body)) = vault::read_and_index(root, p) {
+                        // Keep our in-memory index and body cache up to date.
+                        {
+                            let mut inner = state.write();
+                            inner.by_path.insert(p.clone(), idx.id.clone());
+                            inner.bodies.insert(idx.id.clone(), body);
+                            inner.notes.insert(idx.id.clone(), idx.clone());
+                        }
                         let _ = app.emit("note:created", &idx);
                     }
                 }
             }
             EventKind::Modify(_) => {
                 for p in &ev.paths {
-                    if !is_markdown(p, root) {
+                    if !is_markdown(p, root) || was_self_written(p) {
                         continue;
                     }
                     if !p.exists() {
-                        let _ = app.emit(
-                            "note:deleted",
-                            DeletedPayload {
-                                path: p.to_string_lossy().to_string(),
-                            },
-                        );
+                        emit_deleted(app, state, p);
                         continue;
                     }
-                    if let Ok(idx) = vault::index_from_disk(root, p) {
+                    if let Ok((idx, body)) = vault::read_and_index(root, p) {
+                        {
+                            let mut inner = state.write();
+                            inner.by_path.insert(p.clone(), idx.id.clone());
+                            inner.bodies.insert(idx.id.clone(), body);
+                            inner.notes.insert(idx.id.clone(), idx.clone());
+                        }
                         let _ = app.emit("note:modified", &idx);
                     }
                 }
@@ -131,12 +168,7 @@ fn process_batch(app: &AppHandle, root: &std::path::Path, events: Vec<Event>) {
                     if !is_markdown(p, root) {
                         continue;
                     }
-                    let _ = app.emit(
-                        "note:deleted",
-                        DeletedPayload {
-                            path: p.to_string_lossy().to_string(),
-                        },
-                    );
+                    emit_deleted(app, state, p);
                 }
             }
             _ => {}
@@ -144,11 +176,33 @@ fn process_batch(app: &AppHandle, root: &std::path::Path, events: Vec<Event>) {
     }
 }
 
+fn emit_deleted(
+    app: &AppHandle,
+    state: &Arc<parking_lot::RwLock<crate::state::Inner>>,
+    path: &Path,
+) {
+    {
+        let mut inner = state.write();
+        if let Some(id) = inner.by_path.remove(path) {
+            inner.notes.remove(&id);
+            inner.bodies.remove(&id);
+        }
+    }
+    let _ = app.emit(
+        "note:deleted",
+        DeletedPayload {
+            path: path.to_string_lossy().to_string(),
+        },
+    );
+    // Avoid unused warning when chrono is otherwise unused in this file.
+    let _ = Utc::now();
+}
+
 #[tauri::command]
 pub async fn stop_watching(state: State<'_, AppState>) -> Result<()> {
-    if let Some(handle) = WATCHER_HANDLE.get_or_init(|| Arc::new(Mutex::new(None))).lock().ok() {
-        // dropping the watcher inside the Option stops it
-        drop(handle);
+    if let Some(handle) = WATCHER_HANDLE.get() {
+        let mut guard = handle.lock();
+        *guard = None; // dropping the watcher stops it
     }
     state.write().watching = false;
     Ok(())

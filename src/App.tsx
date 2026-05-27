@@ -11,17 +11,54 @@ import { Settings } from "@components/Settings/Settings";
 import { Toast } from "@components/shared/Toast";
 import { ContextMenu } from "@components/shared/ContextMenu";
 import { ResizeHandle } from "@components/shared/ResizeHandle";
+import { ErrorBoundary } from "@components/ErrorBoundary";
 import { useKeymap } from "@hooks/useKeymap";
 import { useVaultWatcher } from "@hooks/useVaultWatcher";
 import { useTheme } from "@hooks/useTheme";
+import { useWindowTitle } from "@hooks/useWindowTitle";
+import { useWindowState } from "@hooks/useWindowState";
 import { useUIStore } from "@store/uiStore";
 import { useVaultStore } from "@store/vaultStore";
+import { useAppStore } from "@store/appStore";
+import { useAIStore } from "@store/aiStore";
 import "./styles/global.css";
 
 export function App() {
+  return (
+    <ErrorBoundary>
+      <AppShell />
+    </ErrorBoundary>
+  );
+}
+
+function AppShell() {
   useKeymap();
   useVaultWatcher();
   useTheme();
+  useWindowTitle();
+  useWindowState();
+
+  const hydrate = useAppStore((s) => s.hydrate);
+  const hydrateKeys = useAIStore((s) => s.hydrateKeys);
+  const openVault = useVaultStore((s) => s.openVault);
+  const vaultMeta = useVaultStore((s) => s.meta);
+
+  // On first launch, hydrate cross-vault state + AI keys, then auto-open
+  // the last vault.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      void hydrateKeys();
+      const state = await hydrate();
+      if (cancelled || !state?.lastVault || vaultMeta) return;
+      await openVault(state.lastVault).catch(() => undefined);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Run once at mount; subsequent vault opens are user-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sidebarVisible = useUIStore((s) => s.sidebarVisible);
   const noteListVisible = useUIStore((s) => s.noteListVisible);
@@ -36,10 +73,13 @@ export function App() {
   const focusMode = useUIStore((s) => s.focusMode);
   const updateConfig = useVaultStore((s) => s.updateConfig);
 
-  // Persist resized widths to vault config (debounced via onResizeEnd)
+  // When a vault is loaded, restore the panel widths it persisted.
   useEffect(() => {
-    document.documentElement.style.setProperty("--sidebar-w", `${sidebarWidth}px`);
-  }, [sidebarWidth]);
+    if (!vaultMeta) return;
+    const { sidebarWidth: sw, aiPanelWidth: aw } = vaultMeta.config;
+    if (sw) useUIStore.getState().setSidebarWidth(sw);
+    if (aw) useUIStore.getState().setAIPanelWidth(aw);
+  }, [vaultMeta?.path]);
 
   return (
     <div className="app-shell">
@@ -79,6 +119,7 @@ export function App() {
           <>
             <ResizeHandle
               onResize={(w) => setAIPanelWidth(window.innerWidth - w)}
+              onResizeEnd={() => updateConfig({ aiPanelWidth })}
               side="left"
               getBaseWidth={() => window.innerWidth - aiPanelWidth}
             />

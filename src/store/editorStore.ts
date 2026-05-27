@@ -13,6 +13,9 @@ export interface OpenTab {
   isDirty: boolean;
   isLoading: boolean;
   lastError?: string;
+  /** Set when the file on disk changed externally while we had unsaved local
+   *  changes — caller renders a conflict toast. */
+  externalContent?: string;
 }
 
 interface EditorState {
@@ -26,6 +29,12 @@ interface EditorState {
   updateContent: (noteId: string, content: string) => void;
   saveTab: (noteId: string) => Promise<void>;
   navigateBack: () => void;
+  /** Called by the watcher when a tab's file changed on disk. */
+  handleExternalChange: (path: string, newContent: string) => void;
+  /** Accept the on-disk version of a conflicted file. */
+  acceptDiskVersion: (noteId: string) => void;
+  /** Discard the external change and keep the in-memory text. */
+  keepLocalVersion: (noteId: string) => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -130,4 +139,39 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const prev = history[history.length - 1];
     if (prev) set({ activeTabId: prev, history });
   },
+
+  handleExternalChange: (path, newContent) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => {
+        if (t.path !== path) return t;
+        if (!t.isDirty) {
+          // No local changes — silently adopt the new content.
+          return { ...t, loaded: newContent, content: newContent };
+        }
+        // Surface for the UI to prompt the user.
+        return { ...t, externalContent: newContent };
+      }),
+    })),
+
+  acceptDiskVersion: (noteId) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.noteId === noteId && t.externalContent !== undefined
+          ? {
+              ...t,
+              loaded: t.externalContent,
+              content: t.externalContent,
+              isDirty: false,
+              externalContent: undefined,
+            }
+          : t
+      ),
+    })),
+
+  keepLocalVersion: (noteId) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.noteId === noteId ? { ...t, externalContent: undefined } : t
+      ),
+    })),
 }));

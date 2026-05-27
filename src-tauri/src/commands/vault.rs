@@ -2,7 +2,7 @@
 
 use crate::error::{NotorError, Result};
 use crate::models::{VaultConfig, VaultMeta};
-use crate::state::AppState;
+use crate::state::{AppLevel, AppState};
 use crate::vault;
 use std::fs;
 use std::path::PathBuf;
@@ -37,7 +37,11 @@ fn load_or_init_config(vault_root: &std::path::Path) -> Result<VaultConfig> {
 }
 
 #[tauri::command]
-pub async fn open_vault(path: String, state: State<'_, AppState>) -> Result<VaultMeta> {
+pub async fn open_vault(
+    path: String,
+    state: State<'_, AppState>,
+    app: State<'_, AppLevel>,
+) -> Result<VaultMeta> {
     let root = PathBuf::from(&path);
     if !root.exists() {
         return Err(NotorError::NotFound(path.clone()));
@@ -46,14 +50,17 @@ pub async fn open_vault(path: String, state: State<'_, AppState>) -> Result<Vaul
     ensure_notor_dir(&canonical)?;
     let config = load_or_init_config(&canonical)?;
 
-    // Build initial index
+    // Build initial index AND prime the body cache so search doesn't have
+    // to re-read every file on each query.
     let files = vault::scan_markdown_files(&canonical)?;
     let mut notes = std::collections::HashMap::new();
     let mut by_path = std::collections::HashMap::new();
+    let mut bodies = std::collections::HashMap::new();
     for file in &files {
-        match vault::index_from_disk(&canonical, file) {
-            Ok(idx) => {
+        match vault::read_and_index(&canonical, file) {
+            Ok((idx, body)) => {
                 by_path.insert(file.clone(), idx.id.clone());
+                bodies.insert(idx.id.clone(), body);
                 notes.insert(idx.id.clone(), idx);
             }
             Err(e) => log::warn!("indexing {} failed: {}", file.display(), e),
@@ -67,10 +74,16 @@ pub async fn open_vault(path: String, state: State<'_, AppState>) -> Result<Vaul
         inner.config = config.clone();
         inner.notes = notes;
         inner.by_path = by_path;
+        inner.bodies = bodies;
     }
 
+    // Track in recent vaults for restore-on-launch.
+    let display_name = config.name.clone();
+    let canonical_str = canonical.to_string_lossy().to_string();
+    app.with_mut(|s| s.upsert_recent(canonical_str.clone(), display_name));
+
     Ok(VaultMeta {
-        path: canonical.to_string_lossy().to_string(),
+        path: canonical_str,
         config,
         note_count,
     })
@@ -82,6 +95,7 @@ pub async fn close_vault(state: State<'_, AppState>) -> Result<()> {
     inner.vault_path = None;
     inner.notes.clear();
     inner.by_path.clear();
+    inner.bodies.clear();
     Ok(())
 }
 

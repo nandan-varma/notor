@@ -11,13 +11,25 @@ use std::path::{Path, PathBuf};
 
 const FM_DELIM: &str = "---";
 
-/// Resolve and canonicalize a path, guaranteeing it lives inside `vault_root`.
-/// Defends against `..` traversal attacks coming from the frontend.
+/// Resolve a path, guaranteeing it lives inside `vault_root`. Defends
+/// against `..` traversal coming from the frontend by:
+///   1. Rejecting any input that contains a `..` segment, and
+///   2. Verifying the joined result still starts with `vault_root`.
+/// The target file may not yet exist on disk — callers do their own
+/// existence checks where it matters.
 pub fn resolve_in_vault(vault_root: &Path, relative_or_abs: &str) -> Result<PathBuf> {
-    let candidate = if Path::new(relative_or_abs).is_absolute() {
-        PathBuf::from(relative_or_abs)
+    let raw = Path::new(relative_or_abs);
+    if raw
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(NotorError::PathEscape(relative_or_abs.to_string()));
+    }
+
+    let candidate = if raw.is_absolute() {
+        raw.to_path_buf()
     } else {
-        vault_root.join(relative_or_abs)
+        vault_root.join(raw)
     };
 
     let normalized = dunce::simplified(&candidate).to_path_buf();
@@ -174,12 +186,32 @@ pub fn compose_file(fm: &NoteFrontMatter, body: &str) -> Result<String> {
     Ok(format!("{}\n{}{}\n{}", FM_DELIM, yaml, FM_DELIM, body))
 }
 
+/// Read a file from disk, parse front matter, and return both the index entry
+/// AND the body. Callers that intend to cache the body for search should use
+/// this entry point instead of round-tripping through `index_from_disk`.
+pub fn read_and_index(vault_root: &Path, path: &Path) -> Result<(NoteIndex, String)> {
+    let raw = fs::read_to_string(path)?;
+    let (fm_str, body) = split_front_matter(&raw);
+    let fm = parse_front_matter(fm_str);
+    let body_owned = body.to_string();
+    let index = index_from_parts(vault_root, path, &fm, &body_owned)?;
+    Ok((index, body_owned))
+}
+
 /// Read a file from disk, parse front matter, and return its index entry.
 pub fn index_from_disk(vault_root: &Path, path: &Path) -> Result<NoteIndex> {
     let raw = fs::read_to_string(path)?;
     let (fm_str, body) = split_front_matter(&raw);
     let fm = parse_front_matter(fm_str);
+    index_from_parts(vault_root, path, &fm, body)
+}
 
+fn index_from_parts(
+    vault_root: &Path,
+    path: &Path,
+    fm: &NoteFrontMatter,
+    body: &str,
+) -> Result<NoteIndex> {
     let metadata = fs::metadata(path)?;
     let modified_disk: DateTime<Utc> = metadata
         .modified()
@@ -274,7 +306,8 @@ pub fn notor_dir(vault_root: &Path) -> PathBuf {
     vault_root.join(".notor")
 }
 
-/// Walk the vault and return every `.md` file (excludes `.notor/`).
+/// Walk the vault and return every `.md` file (excludes `.notor/` and
+/// any other dot-prefixed directories like `.git`).
 pub fn scan_markdown_files(vault_root: &Path) -> Result<Vec<PathBuf>> {
     let notor = notor_dir(vault_root);
     let mut out = Vec::new();
@@ -299,4 +332,87 @@ pub fn scan_markdown_files(vault_root: &Path) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slugify_basic() {
+        assert_eq!(slugify("Kyoto Trip Ideas"), "kyoto-trip-ideas");
+        assert_eq!(slugify("Hello, world!"), "hello-world");
+        assert_eq!(slugify("  spaces  "), "spaces");
+        assert_eq!(slugify(""), "untitled");
+        assert_eq!(slugify("___"), "untitled");
+    }
+
+    #[test]
+    fn split_front_matter_present() {
+        let text = "---\ntitle: Test\n---\nbody text";
+        let (fm, body) = split_front_matter(text);
+        assert_eq!(fm, Some("title: Test"));
+        assert_eq!(body, "body text");
+    }
+
+    #[test]
+    fn split_front_matter_missing() {
+        let text = "no front matter here";
+        let (fm, body) = split_front_matter(text);
+        assert_eq!(fm, None);
+        assert_eq!(body, text);
+    }
+
+    #[test]
+    fn resolve_in_vault_blocks_traversal() {
+        let root = std::env::temp_dir().join("notor-test-vault-traversal");
+        std::fs::create_dir_all(&root).unwrap();
+        let bad = resolve_in_vault(&root, "../../../etc/passwd");
+        assert!(bad.is_err(), "expected escape error, got {:?}", bad);
+        let good = resolve_in_vault(&root, "note.md");
+        assert!(good.is_ok());
+        assert!(good.unwrap().ends_with("note.md"));
+    }
+
+    #[test]
+    fn front_matter_round_trip() {
+        let fm = NoteFrontMatter {
+            id: Some("abc".into()),
+            title: Some("Hello".into()),
+            created: None,
+            modified: None,
+            tags: vec!["a".into(), "b".into()],
+            pinned: true,
+            collection: Some("Work".into()),
+            status: None,
+            cover: None,
+            aliases: vec![],
+        };
+        let yaml = serialize_front_matter(&fm).unwrap();
+        assert!(yaml.contains("id: abc"));
+        assert!(yaml.contains("title: Hello"));
+        assert!(yaml.contains("pinned: true"));
+        let parsed = parse_front_matter(Some(&yaml));
+        assert_eq!(parsed.id.as_deref(), Some("abc"));
+        assert_eq!(parsed.tags, vec!["a".to_string(), "b".to_string()]);
+        assert!(parsed.pinned);
+    }
+
+    #[test]
+    fn fallback_id_is_stable() {
+        let p = std::path::Path::new("/tmp/foo.md");
+        assert_eq!(fallback_id_from_path(p), fallback_id_from_path(p));
+    }
+
+    #[test]
+    fn unique_note_path_avoids_collisions() {
+        let dir = std::env::temp_dir().join("notor-test-unique");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p1 = unique_note_path(&dir, "abc");
+        std::fs::write(&p1, "").unwrap();
+        let p2 = unique_note_path(&dir, "abc");
+        assert_ne!(p1, p2);
+        assert!(p2.to_string_lossy().contains("abc-2"));
+        std::fs::remove_file(&p1).ok();
+    }
 }

@@ -1,0 +1,56 @@
+.toast {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--accent-warning);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  z-index: var(--z-tooltip);
+  animation: scale-in var(--duration-slow) var(--ease-spring);
+  max-width: 90%;
+}
+
+.body {
+  line-height: 1.4;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.primary,
+.secondary {
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: filter var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.primary {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.primary:hover {
+  filter: brightness(1.1);
+}
+
+.secondary {
+  background-color: var(--bg-overlay);
+  color: var(--text-primary);
+}
+
+.secondary:hover {
+  background-color: var(--border-strong);
+}

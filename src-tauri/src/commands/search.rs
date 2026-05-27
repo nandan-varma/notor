@@ -14,6 +14,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tauri::State;
 
+const MAX_RESULTS: usize = 30;
+
 fn tokenize(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
@@ -131,25 +133,18 @@ pub async fn full_text_search(
         if !passes_filters(note, &filters) {
             continue;
         }
-        let body = match std::fs::read_to_string(&note.path) {
-            Ok(s) => {
-                let (_, body) = vault::split_front_matter(&s);
-                body.to_string()
-            }
-            Err(_) => String::new(),
+        // Hit the in-memory body cache. Notes without a cached body (rare
+        // race with the watcher mid-delete) are skipped rather than blocking
+        // on disk I/O.
+        let body_ref = match inner.bodies.get(&note.id) {
+            Some(b) => b.as_str(),
+            None => continue,
         };
-        let (score, highlights) = score_note(note, &body, &query_terms);
+        let (score, highlights) = score_note(note, body_ref, &query_terms);
         if score <= 0.0 && !query_terms.is_empty() {
             continue;
         }
-        // Generate excerpt centered around first highlight if possible.
-        let excerpt = if let Some(first) = highlights.first() {
-            let start = first.start.saturating_sub(60);
-            let end = (first.end + 100).min(body.len());
-            body[start..end].to_string()
-        } else {
-            body.chars().take(160).collect()
-        };
+        let excerpt = build_excerpt(body_ref, highlights.first());
         results.push(SearchResult {
             id: note.id.clone(),
             title: note.title.clone(),
@@ -160,8 +155,30 @@ pub async fn full_text_search(
         });
     }
     results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    results.truncate(20);
+    results.truncate(MAX_RESULTS);
     Ok(results)
+}
+
+/// Carve out a snippet around the first match. Always lands on char
+/// boundaries so we never slice mid-codepoint on UTF-8 input.
+fn build_excerpt(body: &str, first_hl: Option<&HighlightSpan>) -> String {
+    let Some(first) = first_hl else {
+        return body.chars().take(160).collect();
+    };
+    let want_start = first.start.saturating_sub(60);
+    let start = body
+        .char_indices()
+        .map(|(i, _)| i)
+        .filter(|&i| i <= want_start)
+        .last()
+        .unwrap_or(0);
+    let want_end = first.end + 100;
+    let end = body
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| i >= want_end)
+        .unwrap_or(body.len());
+    body[start..end].to_string()
 }
 
 #[tauri::command]
@@ -171,9 +188,11 @@ pub async fn rebuild_index(state: State<'_, AppState>) -> Result<IndexStats> {
     let files = vault::scan_markdown_files(&root)?;
     let mut notes = HashMap::new();
     let mut by_path: HashMap<PathBuf, String> = HashMap::new();
+    let mut bodies: HashMap<String, String> = HashMap::new();
     for file in &files {
-        if let Ok(idx) = vault::index_from_disk(&root, file) {
+        if let Ok((idx, body)) = vault::read_and_index(&root, file) {
             by_path.insert(file.clone(), idx.id.clone());
+            bodies.insert(idx.id.clone(), body);
             notes.insert(idx.id.clone(), idx);
         }
     }
@@ -182,6 +201,7 @@ pub async fn rebuild_index(state: State<'_, AppState>) -> Result<IndexStats> {
         let mut inner = state.write();
         inner.notes = notes;
         inner.by_path = by_path;
+        inner.bodies = bodies;
     }
     Ok(IndexStats {
         note_count,
@@ -206,11 +226,10 @@ pub async fn get_backlinks(
         if note.id == note_id {
             continue;
         }
-        // Read body and look for [[Title]] mentions.
-        let Ok(raw) = std::fs::read_to_string(&note.path) else {
+        let Some(body) = inner.bodies.get(&note.id) else {
             continue;
         };
-        let lc = raw.to_lowercase();
+        let lc = body.to_lowercase();
         if lc.contains(&format!("[[{}]]", title_lc)) || lc.contains(&format!("[[{}|", title_lc))
         {
             out.push(note.clone());

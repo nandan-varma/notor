@@ -20,6 +20,32 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return tauriInvoke<T>(cmd, args);
 }
 
+// ── App-level state (cross-vault) ──
+export interface RecentVault {
+  path: string;
+  name: string;
+  lastOpened: string;
+}
+export interface WindowState {
+  width?: number | null;
+  height?: number | null;
+  x?: number | null;
+  y?: number | null;
+  maximized: boolean;
+}
+export interface AppLevelState {
+  recentVaults: RecentVault[];
+  lastVault: string | null;
+  lastTheme: string | null;
+  window: WindowState;
+}
+export const getAppState = () => invoke<AppLevelState>("get_app_state");
+export const forgetRecentVault = (path: string) =>
+  invoke<AppLevelState>("forget_recent_vault", { path });
+export const setLastTheme = (theme: string) => invoke<void>("set_last_theme", { theme });
+export const saveWindowState = (state: WindowState) =>
+  invoke<void>("save_window_state", { state });
+
 // ── Vault ──
 export const openVault = (path: string) => invoke<VaultMeta>("open_vault", { path });
 export const closeVault = () => invoke<void>("close_vault");
@@ -61,5 +87,11 @@ export const getTags = () => invoke<TagInfo[]>("get_tags");
 // ── Watcher ──
 export const startWatching = () => invoke<void>("start_watching");
 export const stopWatching = () => invoke<void>("stop_watching");
+
+// ── Shell ──
+export const revealInFinder = (path: string) =>
+  invoke<void>("reveal_in_finder", { path });
+export const openExternally = (path: string) =>
+  invoke<void>("open_externally", { path });
 
 export { isTauri };
