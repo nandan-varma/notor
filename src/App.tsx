@@ -117,11 +117,16 @@ function AppShell() {
 
         {aiPanelVisible && !focusMode && (
           <>
+            {/* ResizeHandle on the LEFT edge of the AI panel.
+                With side="left", dragging the mouse leftward grows the panel
+                (delta < 0, newWidth = startWidth - delta = startWidth + |delta|).
+                We pass aiPanelWidth as the base so the handle tracks the panel's
+                own width — not its left-edge x-coordinate. */}
             <ResizeHandle
-              onResize={(w) => setAIPanelWidth(window.innerWidth - w)}
+              onResize={setAIPanelWidth}
               onResizeEnd={() => updateConfig({ aiPanelWidth })}
               side="left"
-              getBaseWidth={() => window.innerWidth - aiPanelWidth}
+              getBaseWidth={() => aiPanelWidth}
             />
             <div style={{ width: aiPanelWidth, height: "100%", display: "flex", flexShrink: 0 }}>
               <AIPanel />

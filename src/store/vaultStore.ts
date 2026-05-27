@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { FolderInfo, VaultConfig, VaultMeta } from "@/types/vault";
 import type { NoteIndex } from "@/types/note";
 import * as api from "@/lib/tauri";
+import { useUIStore } from "@/store/uiStore";
 
 interface VaultState {
   meta: VaultMeta | null;
@@ -37,7 +38,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       set({ meta, notes: noteMap, folders, loading: false });
       await api.startWatching().catch(() => undefined);
     } catch (e) {
-      set({ error: String(e), loading: false });
+      const message = humanError(e);
+      set({ error: message, loading: false });
+      useUIStore.getState().showToast(`Couldn't open vault: ${message}`, "error");
     }
   },
 
@@ -79,3 +82,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     set((s) => (s.meta ? { meta: { ...s.meta, config: next } } : s));
   },
 }));
+
+function humanError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return JSON.stringify(e);
+}

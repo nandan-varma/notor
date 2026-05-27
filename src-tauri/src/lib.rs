@@ -52,6 +52,7 @@ pub fn run() {
             commands::vault::get_vault_config,
             commands::vault::update_vault_config,
             commands::vault::pick_vault_directory,
+            commands::vault::create_vault,
             // Notes
             commands::fs::list_notes,
             commands::fs::read_note,

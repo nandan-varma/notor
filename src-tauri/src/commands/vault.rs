@@ -122,3 +122,75 @@ pub async fn pick_vault_directory() -> Result<Option<String>> {
     // Kept as a command for future native menu integration.
     Ok(None)
 }
+
+/// Validate a vault name. Returns the trimmed name or a user-facing error.
+/// Exposed for tests; callers should usually go through `create_vault`.
+pub fn sanitize_vault_name(name: &str) -> Result<&str> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(NotorError::Other("vault name is required".into()));
+    }
+    if trimmed.contains(['/', '\\'])
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed.starts_with('.')
+    {
+        return Err(NotorError::Other(
+            "vault name must not contain slashes or start with a dot".into(),
+        ));
+    }
+    Ok(trimmed)
+}
+
+/// Create a new vault directory at `{parent}/{name}` and initialize its
+/// `.notor/` sidecar. Returns the absolute path so the caller can immediately
+/// `open_vault` on it.
+///
+/// If the target already exists we don't error — initializing `.notor/` on top
+/// of an existing folder is a no-op, which lets users create + open in one
+/// step even if they accidentally re-run.
+#[tauri::command]
+pub async fn create_vault(parent: String, name: String) -> Result<String> {
+    let trimmed = sanitize_vault_name(&name)?;
+    let parent_path = PathBuf::from(&parent);
+    if !parent_path.exists() {
+        return Err(NotorError::NotFound(parent));
+    }
+    let canonical_parent = dunce::canonicalize(&parent_path)?;
+    let target = canonical_parent.join(trimmed);
+
+    if !target.exists() {
+        fs::create_dir_all(&target)?;
+    }
+    ensure_notor_dir(&target)?;
+    load_or_init_config(&target)?;
+
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_accepts_simple_names() {
+        assert_eq!(sanitize_vault_name("My Vault").unwrap(), "My Vault");
+        assert_eq!(sanitize_vault_name("  trimmed  ").unwrap(), "trimmed");
+    }
+
+    #[test]
+    fn sanitize_rejects_empty_and_dot_names() {
+        assert!(sanitize_vault_name("").is_err());
+        assert!(sanitize_vault_name("   ").is_err());
+        assert!(sanitize_vault_name(".").is_err());
+        assert!(sanitize_vault_name("..").is_err());
+        assert!(sanitize_vault_name(".hidden").is_err());
+    }
+
+    #[test]
+    fn sanitize_rejects_slashes() {
+        assert!(sanitize_vault_name("a/b").is_err());
+        assert!(sanitize_vault_name("a\\b").is_err());
+        assert!(sanitize_vault_name("../escape").is_err());
+    }
+}

@@ -61,10 +61,15 @@ export function NoteList() {
 
   const onNewNote = async () => {
     const folder = activeFolder ?? "";
-    const note = await api.createNote(folder, "Untitled");
-    await refreshNotes();
-    await refreshFolders();
-    openNote(note);
+    try {
+      const note = await api.createNote(folder, "Untitled");
+      await refreshNotes();
+      await refreshFolders();
+      openNote(note);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      useUIStore.getState().showToast(`Couldn't create note: ${msg}`, "error");
+    }
   };
 
   return (

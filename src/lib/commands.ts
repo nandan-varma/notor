@@ -56,12 +56,19 @@ export function buildCommandRegistry(): AppCommand[] {
       icon: Plus,
       category: "Notes",
       run: async () => {
-        if (!vault.meta) return;
+        if (!vault.meta) {
+          ui.showToast("Open a vault first to create notes", "info");
+          return;
+        }
         const folder = ui.activeFolder ?? "";
-        const note = await api.createNote(folder, "Untitled");
-        await vault.refreshNotes();
-        await vault.refreshFolders();
-        editor.openNote(note);
+        try {
+          const note = await api.createNote(folder, "Untitled");
+          await vault.refreshNotes();
+          await vault.refreshFolders();
+          editor.openNote(note);
+        } catch (e) {
+          ui.showToast(`Couldn't create note: ${humanize(e)}`, "error");
+        }
       },
     },
     {
@@ -71,10 +78,17 @@ export function buildCommandRegistry(): AppCommand[] {
       icon: Plus,
       category: "Notes",
       run: async () => {
-        if (!vault.meta) return;
-        const note = await api.createNote("", "Untitled");
-        await vault.refreshNotes();
-        editor.openNote(note);
+        if (!vault.meta) {
+          ui.showToast("Open a vault first to create notes", "info");
+          return;
+        }
+        try {
+          const note = await api.createNote("", "Untitled");
+          await vault.refreshNotes();
+          editor.openNote(note);
+        } catch (e) {
+          ui.showToast(`Couldn't create note: ${humanize(e)}`, "error");
+        }
       },
     },
     {
@@ -83,9 +97,43 @@ export function buildCommandRegistry(): AppCommand[] {
       icon: FolderOpen,
       category: "Vault",
       run: async () => {
-        if (!isTauri) return;
-        const selected = await openDialog({ directory: true, multiple: false });
-        if (typeof selected === "string") await vault.openVault(selected);
+        if (!isTauri) {
+          ui.showToast("Vault picking requires the desktop build", "info");
+          return;
+        }
+        try {
+          const selected = await openDialog({ directory: true, multiple: false });
+          if (typeof selected === "string") await vault.openVault(selected);
+        } catch (e) {
+          ui.showToast(`Couldn't open vault: ${humanize(e)}`, "error");
+        }
+      },
+    },
+    {
+      id: "createVault",
+      title: "Create new vault…",
+      icon: FolderOpen,
+      category: "Vault",
+      keywords: ["new", "init"],
+      run: async () => {
+        if (!isTauri) {
+          ui.showToast("Vault creation requires the desktop build", "info");
+          return;
+        }
+        try {
+          const parent = await openDialog({
+            directory: true,
+            multiple: false,
+            title: "Choose a parent folder for the new vault",
+          });
+          if (typeof parent !== "string") return;
+          const name = window.prompt("Name your vault", "My Vault");
+          if (!name || !name.trim()) return;
+          const created = await api.createVault(parent, name.trim());
+          await vault.openVault(created);
+        } catch (e) {
+          ui.showToast(`Couldn't create vault: ${humanize(e)}`, "error");
+        }
       },
     },
     {
@@ -146,12 +194,20 @@ export function buildCommandRegistry(): AppCommand[] {
       icon: RotateCw,
       category: "Vault",
       run: async () => {
-        const stats = await api.rebuildIndex();
-        ui.showToast(
-          `Reindexed ${stats.noteCount} notes in ${stats.durationMs}ms`,
-          "success"
-        );
-        await vault.refreshNotes();
+        if (!vault.meta) {
+          ui.showToast("Open a vault first", "info");
+          return;
+        }
+        try {
+          const stats = await api.rebuildIndex();
+          ui.showToast(
+            `Reindexed ${stats.noteCount} notes in ${stats.durationMs}ms`,
+            "success"
+          );
+          await vault.refreshNotes();
+        } catch (e) {
+          ui.showToast(`Reindex failed: ${humanize(e)}`, "error");
+        }
       },
     },
     {
@@ -172,4 +228,10 @@ export function buildCommandRegistry(): AppCommand[] {
   ];
 
   return commands;
+}
+
+function humanize(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return JSON.stringify(e);
 }

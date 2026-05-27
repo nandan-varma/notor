@@ -14,16 +14,27 @@ export function TabBar() {
   const openNote = useEditorStore((s) => s.openNote);
 
   const activeFolder = useUIStore((s) => s.activeFolder);
+  const showToast = useUIStore((s) => s.showToast);
   const refreshNotes = useVaultStore((s) => s.refreshNotes);
   const refreshFolders = useVaultStore((s) => s.refreshFolders);
+  const hasVault = useVaultStore((s) => !!s.meta);
 
   if (tabs.length === 0) return null;
 
   const onNewTab = async () => {
-    const note = await api.createNote(activeFolder ?? "", "Untitled");
-    await refreshNotes();
-    await refreshFolders();
-    openNote(note);
+    if (!hasVault) {
+      showToast("Open a vault first to create notes", "info");
+      return;
+    }
+    try {
+      const note = await api.createNote(activeFolder ?? "", "Untitled");
+      await refreshNotes();
+      await refreshFolders();
+      openNote(note);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(`Couldn't create note: ${msg}`, "error");
+    }
   };
 
   return (

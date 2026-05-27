@@ -52,6 +52,9 @@ export const closeVault = () => invoke<void>("close_vault");
 export const getVaultConfig = () => invoke<VaultConfig>("get_vault_config");
 export const updateVaultConfig = (config: VaultConfig) =>
   invoke<void>("update_vault_config", { config });
+/** Create a vault directory at `{parent}/{name}` and return its absolute path. */
+export const createVault = (parent: string, name: string) =>
+  invoke<string>("create_vault", { parent, name });
 
 // ── Notes ──
 export const listNotes = (folder?: string) => invoke<NoteIndex[]>("list_notes", { folder });
