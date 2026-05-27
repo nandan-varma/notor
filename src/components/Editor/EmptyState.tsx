@@ -1,10 +1,12 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Plus, FolderOpen } from "lucide-react";
+import { Plus, FolderOpen, Clock, X } from "lucide-react";
 import { useVaultStore } from "@store/vaultStore";
 import { useEditorStore } from "@store/editorStore";
+import { useAppStore } from "@store/appStore";
 import { Icon } from "@components/shared/Icon";
 import * as api from "@/lib/tauri";
 import { isTauri } from "@/lib/tauri";
+import { formatNoteDate } from "@/lib/dateFormat";
 import styles from "./EmptyState.module.css";
 
 export function EmptyState() {
@@ -13,6 +15,8 @@ export function EmptyState() {
   const refreshNotes = useVaultStore((s) => s.refreshNotes);
   const refreshFolders = useVaultStore((s) => s.refreshFolders);
   const openNote = useEditorStore((s) => s.openNote);
+  const recents = useAppStore((s) => s.recentVaults);
+  const forget = useAppStore((s) => s.forgetVault);
 
   const onOpenVault = async () => {
     if (!isTauri) return;
@@ -20,6 +24,10 @@ export function EmptyState() {
     if (typeof selected === "string") {
       await openVault(selected);
     }
+  };
+
+  const onOpenRecent = async (path: string) => {
+    await openVault(path);
   };
 
   const onNewNote = async () => {
@@ -44,6 +52,37 @@ export function EmptyState() {
           <button className={styles.primaryBtn} onClick={onNewNote}>
             <Icon icon={Plus} size={14} /> New note
           </button>
+        )}
+
+        {!meta && recents.length > 0 && (
+          <section className={styles.recents}>
+            <div className={styles.recentsTitle}>
+              <Icon icon={Clock} size={11} /> Recent
+            </div>
+            <ul>
+              {recents.slice(0, 5).map((r) => (
+                <li key={r.path} className={styles.recentRow}>
+                  <button
+                    className={styles.recentBtn}
+                    onClick={() => onOpenRecent(r.path)}
+                    title={r.path}
+                  >
+                    <span className={styles.recentName}>{r.name}</span>
+                    <span className={styles.recentMeta}>
+                      {formatNoteDate(r.lastOpened)}
+                    </span>
+                  </button>
+                  <button
+                    className={styles.recentForget}
+                    onClick={() => forget(r.path)}
+                    aria-label={`Forget ${r.name}`}
+                  >
+                    <Icon icon={X} size={10} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         <ul className={styles.hints}>

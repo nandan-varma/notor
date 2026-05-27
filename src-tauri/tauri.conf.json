@@ -29,10 +29,10 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self' tauri: ipc: http://ipc.localhost; img-src 'self' asset: https://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:11434 https://api.anthropic.com https://api.openai.com https://openrouter.ai",
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": ["$HOME/**/*.md", "$HOME/**/*.png", "$HOME/**/*.jpg", "$HOME/**/*.jpeg", "$HOME/**/*.gif", "$HOME/**/*.webp", "$HOME/**/*.svg"]
       }
     },
     "macOSPrivateApi": true

@@ -48,6 +48,18 @@ export function NoteListItem({ note, active }: NoteListItemProps) {
             },
           },
           {
+            label: "Reveal in Finder",
+            action: async () => {
+              await api.revealInFinder(note.path).catch(() => undefined);
+            },
+          },
+          {
+            label: "Open in default app",
+            action: async () => {
+              await api.openExternally(note.path).catch(() => undefined);
+            },
+          },
+          {
             label: "Delete",
             danger: true,
             action: async () => {

@@ -3,6 +3,7 @@ import { Command } from "lucide-react";
 import { useUIStore } from "@store/uiStore";
 import { buildCommandRegistry } from "@/lib/commands";
 import { fuzzyMatch } from "@/lib/fuzzy";
+import { useFocusTrap } from "@hooks/useFocusTrap";
 import { Icon } from "@components/shared/Icon";
 import styles from "./CommandPalette.module.css";
 
@@ -13,6 +14,8 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(visible, panelRef);
 
   useEffect(() => {
     if (visible) {
@@ -59,8 +62,16 @@ export function CommandPalette() {
 
   if (!visible) return null;
   return (
-    <div className={styles.backdrop} onClick={close}>
-      <div className={styles.panel} onClick={(e) => e.stopPropagation()} onKeyDown={onKey}>
+    <div className={styles.backdrop} onClick={close} role="presentation">
+      <div
+        ref={panelRef}
+        className={styles.panel}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKey}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+      >
         <div className={styles.inputRow}>
           <Icon icon={Command} size={14} className={styles.icon} />
           <input

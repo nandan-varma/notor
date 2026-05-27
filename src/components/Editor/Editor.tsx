@@ -17,6 +17,8 @@ import { checkboxWidget } from "./extensions/checkboxWidget";
 import { frontMatterWidget } from "./extensions/frontMatterWidget";
 import { wikilinkWidget } from "./extensions/linkWidget";
 import { typewriterMode } from "./extensions/typewriterMode";
+import { markdownKeymap } from "./extensions/markdownKeymap";
+import { ConflictToast } from "./ConflictToast";
 import { resolveWikilink } from "@/lib/wikilinks";
 import { EmptyState } from "./EmptyState";
 import styles from "./Editor.module.css";
@@ -60,6 +62,7 @@ function EditorSurface({ tab }: { tab: OpenTab }) {
       typewriterMode(config?.typewriterMode ?? false),
       config?.lineNumbers ? lineNumbers() : [],
       keymap.of([
+        ...markdownKeymap,
         ...closeBracketsKeymap,
         ...defaultKeymap,
         ...historyKeymap,
@@ -138,6 +141,7 @@ function EditorSurface({ tab }: { tab: OpenTab }) {
   return (
     <div className={styles.surface}>
       <div ref={ref} className={styles.cm} />
+      <ConflictToast />
       <EditorStatusBar tab={tab} />
     </div>
   );

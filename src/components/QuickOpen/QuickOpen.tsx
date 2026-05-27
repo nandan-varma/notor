@@ -4,6 +4,7 @@ import { useUIStore } from "@store/uiStore";
 import { useVaultStore } from "@store/vaultStore";
 import { useEditorStore } from "@store/editorStore";
 import { fuzzyMatch } from "@/lib/fuzzy";
+import { useFocusTrap } from "@hooks/useFocusTrap";
 import { Icon } from "@components/shared/Icon";
 import { formatNoteDate } from "@/lib/dateFormat";
 import type { NoteIndex } from "@/types/note";
@@ -21,6 +22,8 @@ export function QuickOpen() {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(visible, panelRef);
 
   useEffect(() => {
     if (visible) {
@@ -96,8 +99,16 @@ export function QuickOpen() {
 
   if (!visible) return null;
   return (
-    <div className={styles.backdrop} onClick={close}>
-      <div className={styles.panel} onClick={(e) => e.stopPropagation()} onKeyDown={onKey}>
+    <div className={styles.backdrop} onClick={close} role="presentation">
+      <div
+        ref={panelRef}
+        className={styles.panel}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKey}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Quick open"
+      >
         <div className={styles.inputRow}>
           <Icon icon={Search} size={14} className={styles.searchIcon} />
           <input
