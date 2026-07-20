@@ -28,10 +28,7 @@ pub async fn set_last_theme(theme: String, app: State<'_, AppLevel>) -> Result<(
 }
 
 #[tauri::command]
-pub async fn save_window_state(
-    state: WindowState,
-    app: State<'_, AppLevel>,
-) -> Result<()> {
+pub async fn save_window_state(state: WindowState, app: State<'_, AppLevel>) -> Result<()> {
     app.with_mut(|s| s.window = state);
     Ok(())
 }

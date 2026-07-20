@@ -63,10 +63,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 /// Generate a new note ID. Format: `NTR-{10-char-nanoid}`.
 pub fn new_note_id() -> String {
-    format!(
-        "NTR-{}",
-        nanoid::nanoid!(10, &nanoid::alphabet::SAFE)
-    )
+    format!("NTR-{}", nanoid::nanoid!(10, &nanoid::alphabet::SAFE))
 }
 
 /// Split raw file text into (front matter, body). Either may be empty.
@@ -98,7 +95,9 @@ pub fn split_front_matter(raw: &str) -> (Option<&str>, &str) {
 
 /// Parse YAML front matter into a typed struct (lossy: extra keys are dropped).
 pub fn parse_front_matter(fm: Option<&str>) -> NoteFrontMatter {
-    let Some(yaml) = fm else { return NoteFrontMatter::default(); };
+    let Some(yaml) = fm else {
+        return NoteFrontMatter::default();
+    };
     serde_yaml::from_str(yaml).unwrap_or_default()
 }
 
@@ -106,7 +105,10 @@ pub fn parse_front_matter(fm: Option<&str>) -> NoteFrontMatter {
 pub fn serialize_front_matter(fm: &NoteFrontMatter) -> Result<String> {
     let mut map = serde_yaml::Mapping::new();
     if let Some(id) = &fm.id {
-        map.insert(YamlValue::String("id".into()), YamlValue::String(id.clone()));
+        map.insert(
+            YamlValue::String("id".into()),
+            YamlValue::String(id.clone()),
+        );
     }
     if let Some(title) = &fm.title {
         map.insert(
@@ -138,10 +140,7 @@ pub fn serialize_front_matter(fm: &NoteFrontMatter) -> Result<String> {
         );
     }
     if fm.pinned {
-        map.insert(
-            YamlValue::String("pinned".into()),
-            YamlValue::Bool(true),
-        );
+        map.insert(YamlValue::String("pinned".into()), YamlValue::Bool(true));
     }
     if let Some(collection) = &fm.collection {
         map.insert(
@@ -234,10 +233,7 @@ fn index_from_parts(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let id = fm
-        .id
-        .clone()
-        .unwrap_or_else(|| fallback_id_from_path(path));
+    let id = fm.id.clone().unwrap_or_else(|| fallback_id_from_path(path));
     let title = fm.title.clone().unwrap_or_else(|| {
         path.file_stem()
             .map(|s| s.to_string_lossy().to_string())

@@ -70,11 +70,7 @@ fn score_note(note: &NoteIndex, body: &str, query_terms: &[String]) -> (f32, Vec
 fn passes_filters(note: &NoteIndex, filters: &SearchFilters) -> bool {
     if !filters.tags.is_empty() {
         let lc: Vec<String> = note.tags.iter().map(|t| t.to_lowercase()).collect();
-        if !filters
-            .tags
-            .iter()
-            .all(|t| lc.contains(&t.to_lowercase()))
-        {
+        if !filters.tags.iter().all(|t| lc.contains(&t.to_lowercase())) {
             return false;
         }
     }
@@ -154,7 +150,11 @@ pub async fn full_text_search(
             highlights,
         });
     }
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(MAX_RESULTS);
     Ok(results)
 }
@@ -210,10 +210,7 @@ pub async fn rebuild_index(state: State<'_, AppState>) -> Result<IndexStats> {
 }
 
 #[tauri::command]
-pub async fn get_backlinks(
-    note_id: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<NoteIndex>> {
+pub async fn get_backlinks(note_id: String, state: State<'_, AppState>) -> Result<Vec<NoteIndex>> {
     let inner = state.read();
     let target = inner
         .notes
@@ -230,8 +227,7 @@ pub async fn get_backlinks(
             continue;
         };
         let lc = body.to_lowercase();
-        if lc.contains(&format!("[[{}]]", title_lc)) || lc.contains(&format!("[[{}|", title_lc))
-        {
+        if lc.contains(&format!("[[{}]]", title_lc)) || lc.contains(&format!("[[{}|", title_lc)) {
             out.push(note.clone());
         }
     }

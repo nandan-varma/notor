@@ -28,8 +28,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     tmp.write_all(content.as_bytes())?;
     tmp.as_file_mut().sync_all()?;
     register_self_write(path);
-    tmp.persist(path)
-        .map_err(|e| NotorError::Io(e.error))?;
+    tmp.persist(path).map_err(|e| NotorError::Io(e.error))?;
     Ok(())
 }
 
@@ -264,10 +263,7 @@ pub async fn delete_note(path: String, state: State<'_, AppState>) -> Result<()>
 }
 
 #[tauri::command]
-pub async fn duplicate_note(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<NoteIndex> {
+pub async fn duplicate_note(path: String, state: State<'_, AppState>) -> Result<NoteIndex> {
     let root = require_vault(&state)?;
     let src = vault::resolve_in_vault(&root, &path)?;
     if !src.exists() {

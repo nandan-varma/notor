@@ -105,10 +105,7 @@ pub async fn get_vault_config(state: State<'_, AppState>) -> Result<VaultConfig>
 }
 
 #[tauri::command]
-pub async fn update_vault_config(
-    config: VaultConfig,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn update_vault_config(config: VaultConfig, state: State<'_, AppState>) -> Result<()> {
     let vault_path = state.vault_path().ok_or(NotorError::NoVault)?;
     let cfg_path = config_path(&vault_path);
     fs::write(&cfg_path, serde_json::to_string_pretty(&config)?)?;
