@@ -2,6 +2,24 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
+const manualChunkGroups: Record<string, string[]> = {
+  codemirror: [
+    "@codemirror/view",
+    "@codemirror/state",
+    "@codemirror/lang-markdown",
+    "@codemirror/language",
+    "@codemirror/commands",
+  ],
+  markdown: [
+    "unified",
+    "remark",
+    "remark-gfm",
+    "remark-frontmatter",
+    "remark-rehype",
+    "rehype-stringify",
+  ],
+};
+
 // @ts-expect-error process is a Node global injected by Vite at config-load time
 const host = process.env.TAURI_DEV_HOST;
 
@@ -35,22 +53,14 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          codemirror: [
-            "@codemirror/view",
-            "@codemirror/state",
-            "@codemirror/lang-markdown",
-            "@codemirror/language",
-            "@codemirror/commands",
-          ],
-          markdown: [
-            "unified",
-            "remark",
-            "remark-gfm",
-            "remark-frontmatter",
-            "remark-rehype",
-            "rehype-stringify",
-          ],
+        // Function form: Vite 8 (Rolldown) no longer accepts the object form.
+        manualChunks(id: string) {
+          for (const [chunk, pkgs] of Object.entries(manualChunkGroups)) {
+            if (pkgs.some((pkg) => id.includes(`/node_modules/${pkg}/`))) {
+              return chunk;
+            }
+          }
+          return undefined;
         },
       },
     },
