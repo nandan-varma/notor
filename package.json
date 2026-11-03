@@ -1,7 +1,7 @@
 {
   "name": "notor",
   "version": "0.1.0",
-  "description": "Minimal macOS note-taking & PKM app — plain markdown, native speed, beautiful by default.",
+  "description": "Minimal macOS note-taking & PKM app \u2014 plain markdown, native speed, beautiful by default.",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -75,5 +75,10 @@
     "node": ">=18.0.0",
     "pnpm": ">=8.0.0"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "minimatch": ">=11.0.1"
+    }
+  }
 }
